@@ -24,3 +24,8 @@ As modificações específicas do RustCraft serão identificadas neste repositó
 A branch `master` mantém a cópia-base. O desenvolvimento do RustCraft acontece em branches próprias, começando por `rustcraft/0.1-alpha-foundation`.
 
 Antes de declarar uma versão pronta, é necessário testar o jogo no Luanti e em um dispositivo Android real.
+
+
+## Android build
+
+The `RustCraft Android APK` GitHub Actions workflow builds a debug ARM64 APK with this game bundled into the Luanti Android engine. Open the repository's Actions tab to inspect the build and download the `RustCraft-0.1.0-alpha-Android-arm64` artifact after a successful run.
