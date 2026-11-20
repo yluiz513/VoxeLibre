@@ -1,0 +1,100 @@
+name: RustCraft Android APK
+
+on:
+  push:
+    branches:
+      - rustcraft/0.1-alpha-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout RustCraft game
+        uses: actions/checkout@v4
+        with:
+          path: rustcraft-source
+
+      - name: Checkout Luanti engine
+        uses: actions/checkout@v4
+        with:
+          repository: luanti-org/luanti
+          ref: master
+          path: luanti
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext rsync
+
+      - name: Bundle RustCraft game into Luanti Android assets
+        run: |
+          mkdir -p luanti/games/rustcraft
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='README.md' \
+            --exclude='RUSTCRAFT_README.md' \
+            --exclude='RUSTCRAFT_ROADMAP.md' \
+            rustcraft-source/ luanti/games/rustcraft/
+          test -f luanti/games/rustcraft/game.conf
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("luanti/android/app/build.gradle")
+          s = p.read_text()
+          marker = '\t\tfile("${assetsFolder}/.nomedia").text = ""'
+          addition = '''\t\tcopy {
+          \t\t\tfrom "${projRoot}/games/rustcraft"
+          \t\t\tinto "${assetsFolder}/games/rustcraft"
+          \t\t}
+          '''
+          if marker not in s:
+              raise SystemExit("Could not find Android asset packaging hook")
+          s = s.replace(marker, addition + marker)
+          p.write_text(s)
+
+          # Give RustCraft its own Android package so it can coexist with Luanti.
+          p = Path("luanti/android/app/build.gradle")
+          s = p.read_text().replace("net.minetest.minetest", "net.rustcraft.game")
+          p.write_text(s)
+
+          base = Path("luanti/android/app/src/main")
+          for p in base.rglob("*"):
+              if p.is_file():
+                  try:
+                      s = p.read_text()
+                  except UnicodeDecodeError:
+                      continue
+                  if "net.minetest.minetest" in s:
+                      p.write_text(s.replace("net.minetest.minetest", "net.rustcraft.game"))
+
+          strings = base / "res/values/strings.xml"
+          s = strings.read_text()
+          s = s.replace("<string name=\"label\">Luanti</string>", "<string name=\"label\">RustCraft</string>")
+          s = s.replace("Loading Luanti", "Loading RustCraft")
+          s = s.replace("Luanti is running", "RustCraft is running")
+          strings.write_text(s)
+          PY
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build ARM64 debug APK
+        working-directory: luanti/android
+        run: |
+          sed -i "s/include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'/include 'arm64-v8a'/" app/build.gradle
+          ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Upload RustCraft APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RustCraft-0.1.0-alpha-Android-arm64
+          path: luanti/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
